@@ -3,6 +3,42 @@
  * @note this tool pre-processes the file and generates AST, THEN does its work
  */
 
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻ How this tool works ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
+/*
+
+1. in main():
+
+    - HFileName : from argv (the arg following '-o')
+    - InputFile : argv[1]
+
+    - ClangTool Tool : from fixed compilation options and InputFile
+
+    Tool.run(std::make_unique<HeaderGeneratorFrontendActionFactory>(HFileName).get());
+    => 1. "get()" : creates a HeaderGeneratorFrontendActionFactory object from HFileName
+       2. Tool : contains src_file name and output_file name
+       3. Tool.run :
+            - executes the method "create()" of the class HeaderGeneratorFrontendActionFactory that creates a HeaderGeneratorFrontendAction obj from 
+            output_file
+            - executes the method "CreateASTConsumer()" on the created HeaderGeneratorFrontendAction obj :
+            this method creates a HeaderGeneratorConsumer obj from CompilerInstance and InFile ; 
+            this created object has a member : Visitor (its class is FunctionDeclCollector) that is created with the constructor from InFile
+            - executes the method HandleTranslationUnit() on the created HeaderGeneratorConsumer obj :
+            this method HandleTranslationUnit() :
+            /////////////////////////////////////
+                ++ executes : Visitor.TraverseDecl() : populates the member Visitor.FunctionDeclarations by calling FunctionDeclCollector::VisitFunctionDecl
+                that collects functions declarations
+                ++ calls Visitor.getDeclarations() to get the functions declarations from the member Visitor.FunctionDeclarations
+                now we have the functions declarations
+                ++ creates the output file and writes the functions declarations in it
+            /////////////////////////////////////
+*/
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
+
+
+
+
+
+
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
@@ -25,38 +61,17 @@ using namespace llvm;
 
 
 
- 
-/*-----------------------------------------------------------------------------------------------*/
-/* global variables                                                                             */
-/*-----------------------------------------------------------------------------------------------*/
-// Define a dummy option category for CommonOptionsParser
-// variable_1 = MyToolCategory : option catergory for a command
-// variable_2 = CommonHelp : a command help of type:help_msg
-static cl::OptionCategory MyToolCategory("generate_header_tool options");
-static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
-
-
-// Define a command-line option for the output header file name
-// this option is "-o my_h_file.h" ; its default value (if not written in the cmd) is "" 
-static cl::opt<std::string> OutputHeaderFile(
-    "o",
-    cl::desc("Specify output header file name"),
-    cl::value_desc("filename"),
-    cl::init(""),
-    cl::cat(MyToolCategory)
-);
-
-
 
 /*-----------------------------------------------------------------------------------------------*/
 /* classes                                                                             */
 /*-----------------------------------------------------------------------------------------------*/
 
-// PS: we are using a class template: class my_class : public my_parent_class<my_template_type>
-
-/**
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
+// 1. a RecursiveASTVisitor that parses the AST generated from the InputFile and collects functions declarations from the AST and formats them
+// into a string (string = declarations separated by ;\n)   
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
+/** 
  * @class FunctionDeclCollector : a special AST visitor to collect functions declarations
- * @brief a RecursiveASTVisitor 
  * 
  * @member: Context : generated from MainFilePath
  * @member: FunctionDeclarations : a set of strings, each one is a function declaration inside the .c file
@@ -164,14 +179,14 @@ class FunctionDeclCollector : public RecursiveASTVisitor<FunctionDeclCollector>
 
 
 
-
-
-// --- AST Consumer to process the parsed AST ---
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
+// 2. a ASTConsumer that processes the parsed AST generated from the InputFile :
+// creates the output_file + writes the collected declarations in it ; declarations collected with the FunctionDeclCollector
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
 //AST consumer : is a class that allows you to interact with an AST file
 // class HeaderGeneratorConsumer has 2 members: visitor + outputfile string
 // visitor is an object class that allows you to traverse with an object structure (here: an AST)
 // here the visitor is meant to traverse the ASTContext of MainFile
-
 /**
  * @class HeaderGeneratorConsumer : 
  * 
@@ -273,8 +288,9 @@ class HeaderGeneratorConsumer : public ASTConsumer
 }; //end class HeaderGeneratorConsumer
 
 
-
-
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
+// an ASTFrontendAction that creates the ASTConsumer (2.)
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
 /**
  * @class HeaderGeneratorFrontendAction
  * 
@@ -308,7 +324,9 @@ class HeaderGeneratorFrontendAction : public ASTFrontendAction
 
 }; //end class HeaderGeneratorFrontendAction
 
-
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
+// a FrontendActionFactory that creates the ASTFrontendAction ↑
+// ☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻☻
 //FrontendAction: mainly creates an ASTConsumer: that processes an AST to do things on it like in our case generate a header file
 //FrontendActionFactory: a class that creates multiple instances of a frontendaction and for (if you want) multiple src files
 // COMPILER FRONTEND: deals with src language (c, cpp...) 
@@ -345,73 +363,54 @@ class HeaderGeneratorFrontendActionFactory : public FrontendActionFactory
 int main(int argc, const char **argv)
 {
     
-    //create an options_parser for a command options (options from category "MyToolCategory")
-    // category MyToolCategory includes the option "-o OutputHeaderFile"
-    // in CMakeLists.txt : executable generate_header_tool created from main.cpp
-    // typed command: ./generate_header_tool ../f1.c -o f1.h -- -std=c11
-    // parser will extract from argv:
-    //      -src files
-    //      -the option: OutputHeaderFile (the thing following '-o')
-    //      -the compilation options (like '-- -std=c11')
-    auto ExpectedParser = CommonOptionsParser::create(argc, argv, MyToolCategory);
-    if (!ExpectedParser) {
-        errs() << ExpectedParser.takeError();
+    // This solution assumes the tool will be called with a single source file
+    // and an optional output file. We will manually parse the command line.
+    
+    // Check if the source file argument is provided.
+    if (argc < 2) {
+        llvm::errs() << "Error: No source file specified.\n";
         return 1;
     }
 
-    //OptionsParser is an alias to ExpectedParser (parser for cmd options)
-    CommonOptionsParser &OptionsParser = ExpectedParser.get();
+    std::string InputFile = argv[1];
+    std::string HFileName;
 
-    // check if the typed command includes the src files to be processed in its actions
-    //if the typed command options dont include the src files to be processed => error
-    if (OptionsParser.getSourcePathList().empty()) {
-        errs() << "Error: No source file specified.\n";
-        return 1;
+    //if there is the "-o xxx" in argv 
+    // A simple manual loop to check for the '-o' option and recuperate HFileName (the arg that comes right after '-o')
+    // This is less robust than llvm::cl::ParseCommandLineOptions but
+    // avoids all the setup complexity.
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "-o" && i + 1 < argc) {
+            HFileName = argv[i+1];
+            break;
+        }
     }
 
-
-    //1st src file in the typed cmd options (it can be a filename or a path to file)
-    std::string InputFile = OptionsParser.getSourcePathList()[0];
-
-    //string HFileName is the cl option OutputHeaderFile in the typed command (declared as global var above) (cmd -o hihi.h)
-    std::string HFileName = OutputHeaderFile;
-
-    // if output_header_file isnt specified => derive its name from InputFile, else, use the specified name
-    if (HFileName.empty()) //if no option output_header_file is specified
+    //if there isn't a -o xxx : generate HFileName from InputFile name
+    if (HFileName.empty())
     {
-        // If output file not specified, derive from input file
-        size_t dot_pos = InputFile.rfind('.'); //returns position of last occurence of the caracter '.' in the string InputFile
-        
+        size_t dot_pos = InputFile.rfind('.');
         if (dot_pos != std::string::npos)
         {   
-            //if '.' is found ; std::string::npos = no_position (a value that can be returned by fns like "find")
-            HFileName = InputFile.substr(0, dot_pos) + ".h"; // InputFile : hihi.c -> HFileName : "hihi.h"
-                                                             // InputFile : ../hihi.c -> HFileName : ../hihi.h
+            HFileName = InputFile.substr(0, dot_pos) + ".h";
         }
-        else //if no '.' in the input_file name (exp: hihi instead of hihi.c)
+        else
         {
             HFileName = InputFile + ".h";
         }
     }
 
-    // set fixed compilation_options : {"-std=c17", "-x", "c"}
-    // OLD : //get the compilation_options from the cmd options (like -I , -D...) and create a ClangTool with them
-    // //a ClangTool is an object used to execute actions on a src file (compiler frontend actions)
-    // ClangTool Tool(OptionsParser.getCompilations(), InputFile);
+    // Explicitly define the source files and compiler flags.
+    std::vector<std::string> SourceFiles = { InputFile };
     std::string CWD = ".";
     std::vector<std::string> Flags = {"-std=c17", "-x", "c"};
-    clang::tooling::FixedCompilationDatabase Compilations(CWD, Flags);
-    ClangTool Tool(Compilations, InputFile);
 
-    // Tool.run(object_from_class_compiler_frontend_action) => Tool.run(action)
-    // the action here is the object returned by the method get and created with the constructor std::make_unique<HeaderGeneratorFrontendActionFactory>(x)
-    // the action is an object from the class: HeaderGeneratorFrontendActionFactory : subclass of FrontendActionFactory
-    // Tool.run(x) : 
-    //     1. calls the method create() which creates an object HeaderGeneratorFrontendAction : a subclass of : ASTFrontendAction
-    //     2. executes ASTFrontendAction::CreateASTConsumer on the created ASTFrontendAction to create an object from class : HeaderGeneratorConsumer : subclass of ASTConsumer
-    //     3. executes ASTConsumer::HandleTranslationUnit on the created ASTConsumer : creates and executes actions on the output file derived from input file name
-    //          (actions include inserting declarations in it, ...)
-    //     4. 
+    // Create the ClangTool with a FixedCompilationDatabase.
+    // This correctly matches one of the available constructors.
+    clang::tooling::FixedCompilationDatabase Compilations(CWD, Flags);
+    clang::tooling::ClangTool Tool(Compilations, SourceFiles);
+
+    // Run the tool with your custom frontend action factory.
     return Tool.run(std::make_unique<HeaderGeneratorFrontendActionFactory>(HFileName).get());
 
 
