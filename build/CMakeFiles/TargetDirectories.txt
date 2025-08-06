@@ -1,0 +1,10 @@
+/home/mariem/header_generator/build/CMakeFiles/intrinsics_gen.dir
+/home/mariem/header_generator/build/CMakeFiles/omp_gen.dir
+/home/mariem/header_generator/build/CMakeFiles/acc_gen.dir
+/home/mariem/header_generator/build/CMakeFiles/ARMTargetParserTableGen.dir
+/home/mariem/header_generator/build/CMakeFiles/AArch64TargetParserTableGen.dir
+/home/mariem/header_generator/build/CMakeFiles/RISCVTargetParserTableGen.dir
+/home/mariem/header_generator/build/CMakeFiles/clang-tablegen-targets.dir
+/home/mariem/header_generator/build/CMakeFiles/generate_header_tool.dir
+/home/mariem/header_generator/build/CMakeFiles/edit_cache.dir
+/home/mariem/header_generator/build/CMakeFiles/rebuild_cache.dir
