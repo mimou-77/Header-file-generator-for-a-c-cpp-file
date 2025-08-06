@@ -37,6 +37,7 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 
 
 // Define a command-line option for the output header file name
+// this option is "-o my_h_file.h" ; its default value (if not written in the cmd) is "" 
 static cl::opt<std::string> OutputHeaderFile(
     "o",
     cl::desc("Specify output header file name"),
@@ -369,14 +370,14 @@ int main(int argc, const char **argv)
     }
 
 
-    //1st src file in the typed cmd options
+    //1st src file in the typed cmd options (it can be a filename or a path to file)
     std::string InputFile = OptionsParser.getSourcePathList()[0];
 
-    //string HFileName is the cl option OutputHeaderFile (declared as global var above) (cmd -o hihi.h)
+    //string HFileName is the cl option OutputHeaderFile in the typed command (declared as global var above) (cmd -o hihi.h)
     std::string HFileName = OutputHeaderFile;
 
-    //if no option output_header_file is specified
-    if (HFileName.empty())
+    // if output_header_file isnt specified => derive its name from InputFile, else, use the specified name
+    if (HFileName.empty()) //if no option output_header_file is specified
     {
         // If output file not specified, derive from input file
         size_t dot_pos = InputFile.rfind('.'); //returns position of last occurence of the caracter '.' in the string InputFile
@@ -393,8 +394,8 @@ int main(int argc, const char **argv)
         }
     }
 
-
-    // //get the compilation_options from the cmd options (like -I , -D...) and create a ClangTool with them
+    // set fixed compilation_options : {"-std=c17", "-x", "c"}
+    // OLD : //get the compilation_options from the cmd options (like -I , -D...) and create a ClangTool with them
     // //a ClangTool is an object used to execute actions on a src file (compiler frontend actions)
     // ClangTool Tool(OptionsParser.getCompilations(), InputFile);
     std::string CWD = ".";
