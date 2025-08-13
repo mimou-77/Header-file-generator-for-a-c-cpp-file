@@ -1,6 +1,16 @@
 #include <stdio.h>
 
 
+
+
+
+void hehe(size_t s)
+{
+    printf("size fn");
+}
+
+
+
 //function_1 definition
 void hello_name(const char * name)
 {

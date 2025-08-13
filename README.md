@@ -3,7 +3,15 @@
 > [!IMPORTANT]
 > Linux Debian
 
-This tool generates a .h file from a .c file using CLANG and LLVM.
+This tool generates a .h file from a .c file or a .cpp file, using CLANG and LLVM.
+
+The generated .h file contains ONLY:
+
+- the functions declarations of the functions defined in the .c file
+- the #includes needed for the parameters types in the functions declarations.
+  
+  __Example:__ int my_function(int a); → requires: #include <stdio.h>
+  (here, only standard includes, for other custom types, modifications must be added to the code)
 
 ---
 
@@ -25,13 +33,13 @@ Is the backend, used to optimize and generate code.
 
 - We use the extracted infos to create a string forming the function header to be included in the .h file. Format of the string like: int my_fn(int a, int b);
 
-- We use LLVM libraries to create the .h file and write the declarations and other things into it.
+- We use LLVM libraries to create the .h file and write the declarations and required includes in it.
 
 ---
 
 ## Build the haeder_generator_tool from src : 
 
-### 1. To include the .h files at the beginning of the main.cpp : we need to install clang/llvm dev packages:
+### 1. PREREQUISITES: To include the .h files at the beginning of the main.cpp : we need to install clang/llvm dev packages:
 
 > wget https://apt.llvm.org/llvm.sh
  
@@ -56,14 +64,10 @@ Is the backend, used to optimize and generate code.
 
 ### 3. Test on the f1.c file
 
-> ./generate_header_tool ../f1.c -o f1.h 
+(you are in: build/)
 
-> [!note]
-> A modification in the main.cpp file can be done to add reading compilation commands from the command line. (check line 399 of main.cpp)
->
->> Example :
->> 
->> ./generate_header_tool ../f1.c -o f1.h -- -std=c17 
+> ./generate_header_tool ../f1.c
+
  
 ### 4. Create a symbolic link to be able to execute the command "generate_header_tool" from any place
 
@@ -71,5 +75,7 @@ Is the backend, used to optimize and generate code.
 
 Now you can create another .c file (example: ~/my_file.c) and do: 
 
-> generate_header_tool my_file.c -o my_file.h
+(example: you are in : ~/)
+
+> generate_header_tool my_file.c
 
