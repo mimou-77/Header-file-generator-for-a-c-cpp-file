@@ -23,8 +23,7 @@ using namespace llvm;
 
 // FunctionDeclCollector : an AST visitor that parses the AST of the .c file and:
 //      - collects functions declarations and stores them as a string set in the member: FunctionDeclarations
-//      - collects the types of the parameters of the declarations and inserts the includes of the library
-//      they require in the member: RequiredHeaders. (Modifications can be added to add other custom types)
+//
 // when the (inherited) method: TraverseDecl() is called, it parses the AST and executes 
 // the cb: VisitFunctionDecl() each time it encounters a function declaration. This cb does the processing (aka:
 // populating FunctionDeclarations and RequiredHeaders)
@@ -34,7 +33,6 @@ private:
     ASTContext &Context; //AST + other things
     std::set<std::string> FunctionDeclarations;
     std::string MainFilePath;
-    std::set<std::string> RequiredHeaders;
 
 public:
     //constructor
@@ -53,20 +51,26 @@ public:
             return true;
         }
 
-        //get function name and return type
+        //get function name and return type and storage class
         std::string ReturnType = F->getReturnType().getAsString();
         std::string FunctionName = F->getNameAsString();
         std::string ParamsStr;
-
-        // Check return type for required headers
-        checkAndAddHeader(F->getReturnType());
-
-        for (unsigned i = 0; i < F->getNumParams(); ++i) {
+        std::string StorageClass = ""; //storage class can be: static or extern
+        
+        if (F->getStorageClass() == SC_Static) {
+            StorageClass = "static ";
+        }
+        else 
+        if (F->getStorageClass() == SC_Extern)
+        {
+            StorageClass = "extern ";
+        }
+        
+        //fill the ParamsStr
+        for (unsigned i = 0; i < F->getNumParams(); ++i) 
+        {
             ParmVarDecl *Param = F->getParamDecl(i);
             
-            // Check parameter type for required headers
-            checkAndAddHeader(Param->getType());
-
             ParamsStr += Param->getType().getAsString();
             if (!Param->getNameAsString().empty()) {
                 ParamsStr += " ";
@@ -86,7 +90,7 @@ public:
         }
 
 
-        std::string declaration = ReturnType + " " + FunctionName + "(" + ParamsStr + ");";
+        std::string declaration = StorageClass + ReturnType + " " + FunctionName + "(" + ParamsStr + ");";
         FunctionDeclarations.insert(declaration);
 
         return true;
@@ -96,32 +100,14 @@ public:
         return FunctionDeclarations;
     }
 
-    const std::set<std::string>& getRequiredHeaders() const {
-        return RequiredHeaders;
-    }
-
-private:
-    void checkAndAddHeader(QualType QT) {
-        std::string typeStr = QT.getAsString();
-        if (typeStr.find("size_t") != std::string::npos) {
-            RequiredHeaders.insert("<stddef.h>");
-        }
-        if (typeStr.find("bool") != std::string::npos) {
-            RequiredHeaders.insert("<stdbool.h>");
-        }
-        if (typeStr.find("int") != std::string::npos || typeStr.find("char") != std::string::npos) {
-            RequiredHeaders.insert("<stdio.h>");
-        }
-        // Add more checks for other standard types if needed
-    }
 };
 
 // HeaderGeneratorConsumer : an AST consumer that takes an object from class: FunctionDeclCollector and uses
-// its members: FunctionDeclarations and RequiredHeaders to:
+// its member FunctionDeclarations
 //      - create the .h file, write in it: the #includes + the functions declarations.
 //      - print a msg : "Generated XX.h successfully" when end of HandleTranslationUnit() is reached.
 // the processing is done via the method: HandleTranslationUnit that calls Visitor.TraverseDecl() [that collects
-// the FunctionDeclarations and RequiredHeaders]
+// the FunctionDeclarations]
 // members: Visitor, OutputFilePath (Visitor is a FunctionDeclCollector)
 class HeaderGeneratorConsumer : public ASTConsumer {
 private:
@@ -132,6 +118,8 @@ public:
     explicit HeaderGeneratorConsumer(ASTContext &Context, StringRef MainFile, StringRef OutputFile)
         : Visitor(Context, MainFile), OutputFilePath(OutputFile.str()) {}
 
+    //this method uses the visitor to collect declarations and store them in the member: FunctionDeclarations
+    //then writes them into a .h file and adds the headerguard
     void HandleTranslationUnit(ASTContext &Context) override {
         Visitor.TraverseDecl(Context.getTranslationUnitDecl());
 
@@ -155,11 +143,6 @@ public:
         HeaderFile << "#ifndef " << HeaderGuard << "\n";
         HeaderFile << "#define " << HeaderGuard << "\n\n";
 
-        // Dynamically include headers based on the collected types
-        const auto& requiredHeaders = Visitor.getRequiredHeaders();
-        for (const auto& header : requiredHeaders) {
-            HeaderFile << "#include " << header << "\n";
-        }
         HeaderFile << "\n";
 
         for (const std::string& decl : declarations) {
@@ -167,6 +150,7 @@ public:
         }
 
         HeaderFile << "\n#endif // " << HeaderGuard << "\n";
+
         HeaderFile.close();
 
         outs() << "Generated " << OutputFilePath << " successfully.\n";
@@ -279,13 +263,11 @@ int main(int argc, const char **argv) {
     //          - calls Visitor.TraverseDecl():
     //                  - collector.TraverseDecl() travereses the AST and calls a cb each time it encounters
     //                  a function declaration; the cb is: VisitFunctionDecl(): it populates the collector 
-    //                  members: FunctionDeclarations and RequiredHeaders.
-    //                  Now we have the functions declarations stored in a string set (FunctionDeclarations) and
-    //                  the RequiredHeaders created from the arguments of the functions declarations.
+    //                  member: FunctionDeclarations
+    //                  Now we have the functions declarations stored in a string set (FunctionDeclarations)
     //          - creates the .h file in the path in: OutputFilePath = HFileName
     //          - writes inside the .h file:
     //                  -- the HeaderGuard (#ifndef __My_FILE_H ...)
-    //                  -- the includes (from RequiredHeaders)
     //                  -- the functions declarations (from FunctionDeclarations) 
     //          - prints a msg (.h created successfully) when end of Visitor.TraverseDecl() is reached
     return Tool.run(std::make_unique<HeaderGeneratorFrontendActionFactory>(HFileName).get());
