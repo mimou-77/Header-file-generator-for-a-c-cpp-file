@@ -2,6 +2,11 @@
 #include "inttypes.h"
 
 
+//function that returns a size_t
+size_t fn_size(size_t a)
+{
+    return(a);
+}
 
 
 //function that has static + const
