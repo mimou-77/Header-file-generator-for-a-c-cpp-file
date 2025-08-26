@@ -2,6 +2,7 @@
 #define ___F1_H_
 
 
+bool fn_bool(bool a);
 char * print_hello_sx(char * s);
 const int n_nn(const int n);
 int sum(uint8_t a, int b, int c);

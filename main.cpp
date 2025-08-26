@@ -3,14 +3,17 @@
 #include "clang/Tooling/Tooling.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/RecursiveASTVisitor.h"
-// #include "llvm/Support/CommandLine.h" 
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Lex/PPCallbacks.h" //used by include collector
+#include "clang/Lex/Preprocessor.h" //used by include collector
+
+// #include "llvm/Support/raw_ostream.h"
+
 
 #include <set>
 #include <string>
 #include <fstream>
 #include <vector>
-// #include <map>
 
 using namespace clang;
 using namespace clang::tooling;
@@ -19,6 +22,41 @@ using namespace llvm;
 /*-----------------------------------------------------------------------------------------------*/
 /* classes                                                                             */
 /*-----------------------------------------------------------------------------------------------*/
+
+// IncludeCollector : A preprocessor callback that finds and stores all #include directives in its member: RequiredHeaders
+// when the .c file will compile, the types will be correct, because infos about types are in the includes
+class IncludeCollector : public PPCallbacks {
+private:
+    std::set<std::string> RequiredHeaders;
+
+public:
+    //ctor
+    explicit IncludeCollector(std::set<std::string> &headers) : RequiredHeaders(headers) {}
+
+    // This callback is triggered for every #include directive.
+    // It will be called by the Preprocessor when it encounters an #include.
+    void InclusionDirective(SourceLocation HashLoc,
+                            const Token &IncludeTok,
+                            StringRef FileName,
+                            bool IsAngled,
+                            CharSourceRange FilenameRange,
+                            OptionalFileEntryRef File,
+                            StringRef SearchPath,
+                            StringRef RelativePath,
+                            const clang::Module *SuggestedModule,
+                            bool ModuleImported,
+                            SrcMgr::CharacteristicKind FileType) override {
+        // Collect the header name in the correct format (<...> or "...").
+        std::string headerStr = IsAngled ? "<" + FileName.str() + ">" : "\"" + FileName.str() + "\"";
+        RequiredHeaders.insert(headerStr);
+    }
+
+    const std::set<std::string>& getHeaders() const {
+        return RequiredHeaders;
+    }
+};
+
+
 
 
 // FunctionDeclCollector : an AST visitor that parses the AST of the .c file and:
@@ -51,8 +89,11 @@ public:
             return true;
         }
 
+        // Get the PrintingPolicy from the AST context to get source-level type names
+        const PrintingPolicy &PP = Context.getPrintingPolicy();
+
         //get function name and return type and storage class
-        std::string ReturnType = F->getReturnType().getAsString();
+        std::string ReturnType = F->getReturnType().getAsString(PP);
         std::string FunctionName = F->getNameAsString();
         std::string ParamsStr;
         std::string StorageClass = ""; //storage class can be: static or extern
@@ -71,7 +112,7 @@ public:
         {
             ParmVarDecl *Param = F->getParamDecl(i);
             
-            ParamsStr += Param->getType().getAsString();
+            ParamsStr += Param->getType().getAsString(PP);
             if (!Param->getNameAsString().empty()) {
                 ParamsStr += " ";
                 ParamsStr += Param->getNameAsString();
@@ -113,10 +154,18 @@ class HeaderGeneratorConsumer : public ASTConsumer {
 private:
     FunctionDeclCollector Visitor;
     std::string OutputFilePath;
+    CompilerInstance &CI;
+    std::set<std::string> RequiredHeaders;
 
 public:
-    explicit HeaderGeneratorConsumer(ASTContext &Context, StringRef MainFile, StringRef OutputFile)
-        : Visitor(Context, MainFile), OutputFilePath(OutputFile.str()) {}
+    //ctor
+    explicit HeaderGeneratorConsumer(CompilerInstance &CI, StringRef MainFile, StringRef OutputFile)
+        : Visitor(CI.getASTContext(), MainFile), OutputFilePath(OutputFile.str()), CI(CI)
+    {
+        // Register the IncludeCollector as a preprocessor callback
+        // This is the correct way to pass ownership of the unique_ptr
+        CI.getPreprocessor().addPPCallbacks(std::make_unique<IncludeCollector>(RequiredHeaders));
+    }
 
     //this method uses the visitor to collect declarations and store them in the member: FunctionDeclarations
     //then writes them into a .h file and adds the headerguard
@@ -143,8 +192,15 @@ public:
         HeaderFile << "#ifndef " << HeaderGuard << "\n";
         HeaderFile << "#define " << HeaderGuard << "\n\n";
 
+    
+        //write all the collected headers from the .c in the .h
+        for (const auto &header : RequiredHeaders)
+        {
+            HeaderFile << "#include " << header << "\n";
+        }
+        
         HeaderFile << "\n";
-
+        
         for (const std::string& decl : declarations) {
             HeaderFile << decl << "\n";
         }
@@ -172,7 +228,7 @@ public:
     std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef InFile) override {
         CI.getLangOpts().C17 = true;
         CI.getLangOpts().CPlusPlus = false;
-        return std::make_unique<HeaderGeneratorConsumer>(CI.getASTContext(), InFile, OutputFilePath);
+        return std::make_unique<HeaderGeneratorConsumer>(CI, InFile, OutputFilePath);
     }
 };
 
@@ -234,7 +290,9 @@ int main(int argc, const char **argv) {
     //CWD: current working directory : where to find the src files
     std::string CWD = ".";
     //fixed compilation flags: "-x", "c" : treat code as C code
-    std::vector<std::string> Flags = {"-std=c17", "-x", "c"};
+    //-I: added include paths for standard C++ headers
+    std::vector<std::string> Flags = {"-std=c17", "-x", "c", "-I/usr/include/c++/17", "-I/usr/include/x86_64-linux-gnu/c++/17", "-I/usr/include"};
+    Flags.push_back("-I.");
 
     //create a clang tool from .c file and FixedCompilationDatabase ;
     // the created clang tool has the following infos: CompilerInstance + InFile  

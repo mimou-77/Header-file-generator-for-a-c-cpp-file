@@ -1,6 +1,13 @@
 #include <stdio.h>
 #include "inttypes.h"
+#include "stdbool.h"
 
+
+//function that returns a bool
+bool fn_bool(bool a)
+{
+    return(a);
+}
 
 //function that returns a size_t
 size_t fn_size(size_t a)
