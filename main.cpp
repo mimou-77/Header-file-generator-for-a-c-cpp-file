@@ -27,7 +27,7 @@ using namespace llvm;
 // when the .c file will compile, the types will be correct, because infos about types are in the includes
 class IncludeCollector : public PPCallbacks {
 private:
-    std::set<std::string> RequiredHeaders;
+    std::set<std::string> &RequiredHeaders;
 
 public:
     //ctor
@@ -246,6 +246,9 @@ public:
         return std::make_unique<HeaderGeneratorFrontendAction>(OutputFilePath);
     }
 };
+
+
+
 
 /*-----------------------------------------------------------------------------------------------*/
 /* main function                                                                             */
