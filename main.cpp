@@ -7,8 +7,6 @@
 #include "clang/Lex/PPCallbacks.h" //used by include collector
 #include "clang/Lex/Preprocessor.h" //used by include collector
 
-// #include "llvm/Support/raw_ostream.h"
-
 
 #include <set>
 #include <string>
@@ -23,15 +21,15 @@ using namespace llvm;
 /* classes                                                                             */
 /*-----------------------------------------------------------------------------------------------*/
 
-// IncludeCollector : A preprocessor callback that finds and stores all #include directives in its member: RequiredHeaders
-// when the .c file will compile, the types will be correct, because infos about types are in the includes
+// IncludeCollector : A preprocessor callbacks set that finds and stores all #include directives in its member: RequiredHeaders
 class IncludeCollector : public PPCallbacks {
 private:
     std::set<std::string> &RequiredHeaders;
+    const SourceManager &SM;
 
 public:
     //ctor
-    explicit IncludeCollector(std::set<std::string> &headers) : RequiredHeaders(headers) {}
+    explicit IncludeCollector(std::set<std::string> &headers, const SourceManager &SM) : RequiredHeaders(headers), SM(SM) {}
 
     // This callback is triggered for every #include directive.
     // It will be called by the Preprocessor when it encounters an #include.
@@ -46,9 +44,13 @@ public:
                             const clang::Module *SuggestedModule,
                             bool ModuleImported,
                             SrcMgr::CharacteristicKind FileType) override {
+
+        if (SM.isInMainFile(HashLoc)) //collect only the includes which # is in the .c file
+        {
         // Collect the header name in the correct format (<...> or "...").
         std::string headerStr = IsAngled ? "<" + FileName.str() + ">" : "\"" + FileName.str() + "\"";
         RequiredHeaders.insert(headerStr);
+        }
     }
 
     const std::set<std::string>& getHeaders() const {
@@ -65,7 +67,7 @@ public:
 // when the (inherited) method: TraverseDecl() is called, it parses the AST and executes 
 // the cb: VisitFunctionDecl() each time it encounters a function declaration. This cb does the processing (aka:
 // populating FunctionDeclarations and RequiredHeaders)
-// members: Context (from Tool), FunctionDeclarations, MainFilePath (from Tool), RequiredHeaders
+// members: Context (from Tool), FunctionDeclarations, MainFilePath (from Tool)
 class FunctionDeclCollector : public RecursiveASTVisitor<FunctionDeclCollector> {
 private:
     ASTContext &Context; //AST + other things
@@ -143,13 +145,9 @@ public:
 
 };
 
-// HeaderGeneratorConsumer : an AST consumer that takes an object from class: FunctionDeclCollector and uses
-// its member FunctionDeclarations
-//      - create the .h file, write in it: the #includes + the functions declarations.
-//      - print a msg : "Generated XX.h successfully" when end of HandleTranslationUnit() is reached.
-// the processing is done via the method: HandleTranslationUnit that calls Visitor.TraverseDecl() [that collects
-// the FunctionDeclarations]
-// members: Visitor, OutputFilePath (Visitor is a FunctionDeclCollector)
+// HeaderGeneratorConsumer : an AST consumer that :
+//      - 
+// members: Visitor, OutputFilePath (Visitor is a FunctionDeclCollector), CI, RequiredHeaders
 class HeaderGeneratorConsumer : public ASTConsumer {
 private:
     FunctionDeclCollector Visitor;
@@ -164,7 +162,7 @@ public:
     {
         // Register the IncludeCollector as a preprocessor callback
         // This is the correct way to pass ownership of the unique_ptr
-        CI.getPreprocessor().addPPCallbacks(std::make_unique<IncludeCollector>(RequiredHeaders));
+        CI.getPreprocessor().addPPCallbacks(std::make_unique<IncludeCollector>(RequiredHeaders, CI.getSourceManager()));
     }
 
     //this method uses the visitor to collect declarations and store them in the member: FunctionDeclarations
@@ -302,34 +300,59 @@ int main(int argc, const char **argv) {
     clang::tooling::FixedCompilationDatabase Compilations(CWD, Flags);
     clang::tooling::ClangTool Tool(Compilations, SourceFiles);
 
-    // 1. create an object from class: HeaderGeneratorFrontendActionFactory from HFileName and return it via
-    // the method get() ; Now the created factory object has the member: OutputFilePath = HFileName.
-    // 2. the returned object (has class: HeaderGeneratorFrontendActionFactory) is passed as an argument to
-    // Tool.run()
-    // 3. Tool.run() does the following:
-    //      3.1. executes the method create() of the returned object:
-    //      - the method create() creates an object from class: HeaderGeneratorFrontendAction fom the value
-    //      of factory object member: OutputFilePath (value = HFileName) ; Now the created action object
-    //      has the member: OutputFilePath = HFileName.
-    //      3.2. executes the method CreateASTConsumer() on the created action object with parameters from
-    //      the clang tool object infos (CI + InFile) ; InFile = the .c file, and CI containing the AST context
-    //      of the .c file.
-    //      - this method CreateASTConsumer(): creates an object from class: HeaderGeneratorConsumer
-    //      Now: the created consumer object has has members : Visitor(Context of .c file, MainFile = .c file) and
-    //      OutputFilePath(OutputFile = HFileName); 
-    //      Visitor is from class: FunctionDeclCollector.
-    //      Visitor is a collector.
-    //      3.3. calls the method HandleTranslationUnit() of the created consumer object ;
-    //      this method does the following:
-    //          - calls Visitor.TraverseDecl():
-    //                  - collector.TraverseDecl() travereses the AST and calls a cb each time it encounters
-    //                  a function declaration; the cb is: VisitFunctionDecl(): it populates the collector 
-    //                  member: FunctionDeclarations
-    //                  Now we have the functions declarations stored in a string set (FunctionDeclarations)
-    //          - creates the .h file in the path in: OutputFilePath = HFileName
-    //          - writes inside the .h file:
-    //                  -- the HeaderGuard (#ifndef __My_FILE_H ...)
-    //                  -- the functions declarations (from FunctionDeclarations) 
-    //          - prints a msg (.h created successfully) when end of Visitor.TraverseDecl() is reached
+    
+    // This line of code initiates the entire tool execution process.
+// It can be broken down into the following steps:
+//
+// 1. `std::make_unique<HeaderGeneratorFrontendActionFactory>(HFileName)`:
+//    - This creates a smart pointer (`std::unique_ptr`) to a new instance of
+//      `HeaderGeneratorFrontendActionFactory`, passing the desired output
+//      header filename (`HFileName`) to its constructor.
+//
+// 2. `.get()`:
+//    - This retrieves the raw pointer from the smart pointer. `Tool.run()`
+//      expects a raw pointer to a `FrontendActionFactory`.
+//
+// 3. `Tool.run(...)`:
+//    - The `ClangTool` object's `run()` method takes the factory and begins
+//      the compilation process. It handles the low-level details of setting up
+//      the compiler and parsing the source file (`InputFile`).
+//
+//    - During the run, the following callbacks and actions occur in order:
+//      a. **Factory creates Action**: `Tool.run()` calls the factory's `create()`
+//         method, which returns a `std::unique_ptr<HeaderGeneratorFrontendAction>`.
+//         This action object is responsible for the overall task.
+//
+//      b. **Action creates Consumer**: The `Tool.run()` method then calls the
+//         action's `CreateASTConsumer()` method. It provides a `CompilerInstance`
+//         object (`CI`), which contains the state of the compiler, including
+//         the preprocessor and the `ASTContext`.
+//
+//      c. **Preprocessor runs and collects includes**: Within the `HeaderGeneratorConsumer`'s
+//         constructor, an `IncludeCollector` is added to the preprocessor. CLANG
+//         runs the preprocessor, and the `IncludeCollector`'s `InclusionDirective`
+//         callback is executed for every `#include` directive, populating the
+//         `RequiredHeaders` set.
+//
+//      d. **AST is built**: After preprocessing, CLANG parses the code and builds
+//         the Abstract Syntax Tree (AST).
+//
+//      e. **Consumer processes AST**: `Tool.run()` calls the consumer's
+//         `HandleTranslationUnit()` method, passing the newly created `ASTContext`.
+//         This is where your custom logic takes over.
+//
+//         - `Visitor.TraverseDecl()`: The `HandleTranslationUnit` method
+//           initiates a traversal of the AST using the `FunctionDeclCollector`
+//           visitor.
+//
+//         - `VisitFunctionDecl()`: As the visitor encounters each function
+//           declaration in the AST, its `VisitFunctionDecl()` callback is
+//           executed. This callback extracts the function's details and adds
+//           its declaration string to the `FunctionDeclarations` set.
+//
+//      f. **Header is written**: After the traversal is complete, the
+//         `HandleTranslationUnit` method takes the collected `RequiredHeaders`
+//         and `FunctionDeclarations` and writes them, along with the header
+//         guard, to the specified output file (`HFileName`).
     return Tool.run(std::make_unique<HeaderGeneratorFrontendActionFactory>(HFileName).get());
 }

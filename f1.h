@@ -1,9 +1,9 @@
 #ifndef ___F1_H_
 #define ___F1_H_
 
-#include <stdio.h>
 #include "inttypes.h"
-
+#include "stdbool.h"
+#include <stdio.h>
 
 bool fn_bool(bool a);
 char * print_hello_sx(char * s);

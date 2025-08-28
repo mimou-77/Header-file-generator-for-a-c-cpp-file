@@ -3,37 +3,24 @@
 > [!IMPORTANT]
 > Linux Debian
 
-This tool generates a .h file from a .c file or a .cpp file, using CLANG and LLVM.
+This tool generates a .h file from a .c file or a .cpp file, using CLANG.
 
-The generated .h file contains ONLY:
+The generated .h file contains :
 
 - the functions declarations of the functions defined in the .c file
-- the #includes needed for the parameters types in the functions declarations.
+- the #includes in the .c file
   
-  __Example:__ int my_function(int a); → requires: #include <stdio.h>
-  (here, only standard includes, for other custom types, modifications must be added to the code)
-
----
-
-`#### CLANG:`
-
-Is the frontend, used to parse src code and convert it to LLVM formats.
-
-`#### LLVM:`
-
-Is the backend, used to optimize and generate code.
-
 ---
 
 ### → How it works:
 
-- Here: we use CLANG to parse the .c file and generate its AST.
+- `(Tool.run())` : starts by executing the CLANG preprocessor on the .c file. Via a custom __preprocessor callback__ we created, It collects the includes and stores them as a set of strings.
 
-- RecursiveASTVisitor traverses the nodes of the AST, when it encounters a function declaration, it extracts its infos(return type, name, parameter, ...).
+- Then CLANG parses the .c file and generate its AST.
 
-- We use the extracted infos to create a string forming the function header to be included in the .h file. Format of the string like: int my_fn(int a, int b);
+- A __RecursiveASTVisitor__ traverses the nodes of the AST, when it encounters a function declaration, it extracts its infos(return type, name, parameter, ...) and stores them as a string in a set of strings.
 
-- We use LLVM libraries to create the .h file and write the declarations and required includes in it.
+- An __ASTConsumer__ uses the infos collected by the __preprocessor callback__ and the __RecursiveASTVisitor__ to generate the .h file ; this .h file contains the includes copied from the .c file and the functions declarations as well as a header guard.
 
 ---
 
